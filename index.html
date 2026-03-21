@@ -437,6 +437,7 @@
     let books = [];
     let currentPage = 0;
     const PAGE_SIZE = 25;
+    const visitedPages = new Set();
 
     /* ==================== CONSTANTS ==================== */
     const BOOK_PUBLISHERS = new Set([
@@ -529,6 +530,8 @@
             books.sort((a, b) => a.title.localeCompare(b.title));
 
             currentPage = 0;
+            visitedPages.clear();
+            visitedPages.add(0);
             showFlash('success', `Found ${books.length} books from your Amazon export.`);
             document.getElementById('upload-section').classList.add('hidden');
             document.getElementById('results-section').classList.remove('hidden');
@@ -660,6 +663,16 @@
         return Math.max(1, Math.ceil(books.length / PAGE_SIZE));
     }
 
+    /* Books on pages the user has visited — these are the only ones eligible for export */
+    function getVisitedBooks() {
+        const result = [];
+        for (const page of visitedPages) {
+            const start = page * PAGE_SIZE;
+            result.push(...books.slice(start, start + PAGE_SIZE));
+        }
+        return result;
+    }
+
     /* ==================== RENDERING ==================== */
     function renderTable() {
         const tbody = document.getElementById('book-tbody');
@@ -744,19 +757,20 @@
     }
 
     function updateStats() {
-        const checkedBooks = books.filter(b => b.checked);
-        const checkedCount = checkedBooks.length;
-        const checkedMissingAuthor = checkedBooks.filter(b => !b.author.trim()).length;
+        const visitedBooks = getVisitedBooks();
+        const checkedVisited = visitedBooks.filter(b => b.checked);
+        const checkedVisitedCount = checkedVisited.length;
+        const checkedVisitedMissingAuthor = checkedVisited.filter(b => !b.author.trim()).length;
         const totalPages = getTotalPages();
 
         /* Top stats: page info */
         document.getElementById('stats-line').textContent =
             `Page ${currentPage + 1} of ${totalPages} (${books.length} total books)`;
 
-        /* Bottom stats: selection and author status */
-        let bottomText = `${checkedCount} book${checkedCount !== 1 ? 's' : ''} selected for export.`;
-        if (checkedMissingAuthor > 0) {
-            bottomText += ` ${checkedMissingAuthor} selected book${checkedMissingAuthor !== 1 ? 's' : ''} still missing authors.`;
+        /* Bottom stats: selection and author status across visited pages */
+        let bottomText = `${checkedVisitedCount} book${checkedVisitedCount !== 1 ? 's' : ''} selected for export.`;
+        if (checkedVisitedMissingAuthor > 0) {
+            bottomText += ` ${checkedVisitedMissingAuthor} still missing authors.`;
         }
         document.getElementById('bottom-stats').textContent = bottomText;
 
@@ -777,13 +791,13 @@
             ? 'All selected books on this page must have authors before continuing'
             : 'Go to next page';
 
-        /* Export CSV: visible only on last page, disabled if any selected book across all pages is missing authors */
+        /* Export CSV: visible when there are selected books on visited pages and all have authors */
         const exportBtn = document.getElementById('export-btn');
-        exportBtn.classList.toggle('hidden', !isLastPage);
-        const allHaveAuthors = checkedCount > 0 && checkedMissingAuthor === 0;
-        exportBtn.disabled = !allHaveAuthors;
-        exportBtn.title = allHaveAuthors
-            ? `Export ${checkedCount} books to CSV`
+        const canExport = checkedVisitedCount > 0 && checkedVisitedMissingAuthor === 0;
+        exportBtn.classList.toggle('hidden', checkedVisitedCount === 0);
+        exportBtn.disabled = !canExport;
+        exportBtn.title = canExport
+            ? `Export ${checkedVisitedCount} books to CSV`
             : 'All selected books must have authors before exporting';
     }
 
@@ -796,6 +810,7 @@
     function nextPage() {
         if (currentPage < getTotalPages() - 1) {
             currentPage++;
+            visitedPages.add(currentPage);
             renderTable();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -930,7 +945,7 @@
 
     /* ==================== CSV EXPORT ==================== */
     function exportCSV() {
-        const checkedBooks = books.filter(b => b.checked);
+        const checkedBooks = getVisitedBooks().filter(b => b.checked);
         if (checkedBooks.length === 0) {
             showFlash('error', 'No books selected for export.');
             return;
