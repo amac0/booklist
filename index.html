@@ -475,6 +475,18 @@
         /angry birds/i,
     ];
 
+    /* ==================== TITLE CLEANING ==================== */
+    function cleanTitle(title) {
+        /* Remove anything in parentheses, square brackets, or curly braces, then clean up whitespace */
+        return title
+            .replace(/\s*\([^)]*\)/g, '')
+            .replace(/\s*\[[^\]]*\]/g, '')
+            .replace(/\s*\{[^}]*\}/g, '')
+            .replace(/\s{2,}/g, ' ')
+            .replace(/,\s*$/, '')
+            .trim();
+    }
+
     /* ==================== ZIP PROCESSING ==================== */
     async function processZip(file) {
         try {
@@ -532,7 +544,7 @@
             .filter(r => r['Product Name'] && r['Product Name'] !== 'Not Applicable')
             .map(r => ({
                 asin: r.ASIN || '',
-                title: (r['Product Name'] || '').trim(),
+                title: cleanTitle((r['Product Name'] || '').trim()),
                 author: (r.Author || '').trim(),
                 status: 'Read',
                 source: 'borrowed',
@@ -552,7 +564,7 @@
             if (seller === 'Audible') {
                 results.push({
                     asin: r.ASIN || '',
-                    title: name,
+                    title: cleanTitle(name),
                     author: '',
                     status: 'Read',
                     source: 'audible',
@@ -561,7 +573,7 @@
             } else if (BOOK_PUBLISHERS.has(seller) && seller !== 'Audible') {
                 results.push({
                     asin: r.ASIN || '',
-                    title: name,
+                    title: cleanTitle(name),
                     author: '',
                     status: 'Read',
                     source: 'publisher',
@@ -572,7 +584,7 @@
                 if (!isNonBook) {
                     results.push({
                         asin: r.ASIN || '',
-                        title: name,
+                        title: cleanTitle(name),
                         author: '',
                         status: 'Read',
                         source: 'amazon-digital',
@@ -593,7 +605,7 @@
             })
             .map(r => ({
                 asin: r.ASIN || '',
-                title: (r['Product Name'] || '').trim(),
+                title: cleanTitle((r['Product Name'] || '').trim()),
                 author: '',
                 status: 'Read',
                 source: 'physical',
