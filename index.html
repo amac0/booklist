@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<!-- ABOUTME: Single-page tool to extract books from an Amazon Personal Export zip file. -->
+<!-- ABOUTME: Presents an editable list with Open Library author lookup and CSV export. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BookList - Amazon Export Book Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* ==================== DESIGN SYSTEM (peplist-derived) ==================== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #f8f9fb;
+            --card-bg: #ffffff;
+            --text: #1a1a2e;
+            --text-muted: #6b7280;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-light: #eef2ff;
+            --border: #e5e7eb;
+            --input-bg: #f9fafb;
+            --radius: 12px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --danger: #ef4444;
+            --danger-light: #fef2f2;
+            --success: #22c55e;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ==================== NAV ==================== */
+        nav.site-nav {
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        nav.site-nav .logo {
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        /* ==================== LAYOUT ==================== */
+        .page {
+            max-width: 1100px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.375rem;
+        }
+        .page-subtitle {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            margin-bottom: 2rem;
+        }
+
+        /* ==================== BUTTONS ==================== */
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--input-bg);
+            color: var(--text);
+        }
+        .btn-sm {
+            padding: 0.3125rem 0.625rem;
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+
+        /* ==================== CARDS ==================== */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 2rem;
+        }
+        .card-flush {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        /* ==================== FLASH MESSAGES ==================== */
+        .flash {
+            padding: 0.875rem 1.25rem;
+            margin-bottom: 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+        .flash-success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+        .flash-error {
+            background: var(--danger-light);
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        /* ==================== UPLOAD ZONE ==================== */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .upload-zone:hover,
+        .upload-zone.dragover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+        .upload-zone h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .upload-zone p {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+        }
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+
+        /* ==================== TOOLBAR ==================== */
+        .toolbar {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        .toolbar .search-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.625rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--input-bg);
+            font-size: 0.875rem;
+            font-family: inherit;
+            color: var(--text);
+        }
+        .toolbar .search-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .toolbar select {
+            padding: 0.625rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--input-bg);
+            font-size: 0.875rem;
+            font-family: inherit;
+            color: var(--text);
+        }
+        .toolbar select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .stats-line {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            width: 100%;
+        }
+
+        /* ==================== PROGRESS BAR ==================== */
+        .progress-container {
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .progress-container.visible {
+            display: block;
+        }
+        .progress-label {
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            margin-bottom: 0.375rem;
+        }
+        .progress-bar {
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            transition: width 0.2s;
+            width: 0%;
+        }
+
+        /* ==================== BOOK TABLE ==================== */
+        .table-wrapper {
+            overflow-x: auto;
+        }
+        .book-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .book-table th {
+            position: sticky;
+            top: 0;
+            background: var(--input-bg);
+            font-size: 0.6875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            padding: 0.75rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .book-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+            font-size: 0.875rem;
+        }
+        .book-table tr:hover {
+            background: rgba(99, 102, 241, 0.03);
+        }
+        .book-table tr.unchecked {
+            opacity: 0.5;
+        }
+        .book-table input[type="checkbox"] {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            accent-color: var(--primary);
+        }
+        .book-table input[type="text"] {
+            width: 100%;
+            padding: 0.375rem 0.5rem;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-family: inherit;
+            color: var(--text);
+            background: transparent;
+            transition: border-color 0.15s, background 0.15s;
+        }
+        .book-table input[type="text"]:hover {
+            background: var(--input-bg);
+        }
+        .book-table input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+            background: #fff;
+        }
+        .book-table select {
+            padding: 0.375rem 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.8125rem;
+            font-family: inherit;
+            color: var(--text);
+            background: var(--input-bg);
+        }
+        .book-table select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+        .col-check { width: 40px; }
+        .col-title { width: 35%; }
+        .col-author { width: 25%; }
+        .col-status { width: 140px; }
+        .col-source { width: 140px; }
+
+        /* ==================== SOURCE TAGS ==================== */
+        .source-tag {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            padding: 0.1875rem 0.5rem;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+        .source-tag-borrowed {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+        .source-tag-audible {
+            background: #fff7ed;
+            color: #c2410c;
+        }
+        .source-tag-publisher {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .source-tag-amazon-digital {
+            background: #fefce8;
+            color: #a16207;
+        }
+        .source-tag-physical {
+            background: var(--input-bg);
+            color: var(--text-muted);
+        }
+
+        /* ==================== EMPTY STATE ==================== */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--text-muted);
+        }
+        .empty-state p {
+            font-size: 0.875rem;
+        }
+
+        /* ==================== HIDDEN ==================== */
+        .hidden {
+            display: none !important;
+        }
+
+        /* ==================== RESPONSIVE ==================== */
+        @media (max-width: 768px) {
+            .page {
+                padding: 0 0.75rem;
+                margin: 1rem auto;
+            }
+            .toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .toolbar .search-input {
+                min-width: unset;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="site-nav">
+        <span class="logo">BookList</span>
+    </nav>
+
+    <main class="page">
+        <h1 class="page-title">Amazon Book Extractor</h1>
+        <p class="page-subtitle">Upload your Amazon Personal Export zip to extract your book list</p>
+
+        <div id="flash-area"></div>
+
+        <!-- Upload Section -->
+        <div id="upload-section" class="card">
+            <div id="upload-zone" class="upload-zone">
+                <h3>Drop your Amazon Export zip file here</h3>
+                <p>Or click to select a file</p>
+                <input type="file" id="file-input" accept=".zip">
+            </div>
+        </div>
+
+        <!-- Results Section (hidden until books loaded) -->
+        <div id="results-section" class="hidden">
+            <div class="toolbar">
+                <input type="text" class="search-input" id="search-input" placeholder="Search by title or author...">
+                <select id="source-filter">
+                    <option value="all">All Sources</option>
+                    <option value="borrowed">Kindle Unlimited</option>
+                    <option value="audible">Audible</option>
+                    <option value="publisher">Publisher Ebook</option>
+                    <option value="amazon-digital">Amazon Digital (unverified)</option>
+                    <option value="physical">Physical Order</option>
+                </select>
+                <button id="lookup-btn" class="btn btn-secondary">Look Up Authors</button>
+                <button id="export-btn" class="btn btn-primary">Export CSV</button>
+            </div>
+
+            <div id="stats-line" class="stats-line"></div>
+
+            <div id="progress-container" class="progress-container">
+                <div id="progress-label" class="progress-label">Looking up authors...</div>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="card-flush">
+                <div class="table-wrapper">
+                    <table class="book-table">
+                        <thead>
+                            <tr>
+                                <th class="col-check"><input type="checkbox" id="select-all" checked></th>
+                                <th class="col-title">Title</th>
+                                <th class="col-author">Author</th>
+                                <th class="col-status">Status</th>
+                                <th class="col-source">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="book-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="empty-state" class="empty-state hidden">
+                    <p>No books match your search.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+    // ABOUTME: Core application logic for parsing Amazon exports and managing the book list.
+    // ABOUTME: Handles zip extraction, CSV parsing, deduplication, Open Library lookups, and CSV export.
+
+    /* ==================== STATE ==================== */
+    let books = [];
+
+    /* ==================== CONSTANTS ==================== */
+    const BOOK_PUBLISHERS = new Set([
+        'Audible',
+        'Random House Digital, Inc.',
+        'Macmillan',
+        'Scholastic, Inc.',
+        'Penguin Publishing',
+        'Penguin Random House Publisher Services',
+        'HarperCollins',
+        'Hachette Book Group',
+        'Simon & Schuster Digital Sales Inc',
+        'Disney Book Group',
+        'Cengage Learning, Inc.',
+        'Houghton Mifflin Publishing',
+    ]);
+
+    const STATUSES = ['None', 'Want to Read', 'Currently Reading', 'Read', 'Did Not Finish'];
+
+    const SOURCE_LABELS = {
+        'borrowed': 'Kindle Unlimited',
+        'audible': 'Audible',
+        'publisher': 'Publisher Ebook',
+        'amazon-digital': 'Amazon Digital (unverified)',
+        'physical': 'Physical Order',
+    };
+
+    /* Patterns that indicate an Amazon Digital Services item is not a book */
+    const NON_BOOK_PATTERNS = [
+        /^not applicable$/i,
+        /^kindle unlimited$/i,
+        /^amazon prime video$/i,
+        /^prime membership fee$/i,
+        /^ad free for prime video$/i,
+        /^amazon underground$/i,
+        /angry birds/i,
+    ];
+
+    /* ==================== ZIP PROCESSING ==================== */
+    async function processZip(file) {
+        try {
+            const zip = await JSZip.loadAsync(file);
+            const csvFiles = {};
+            const targets = {
+                'Digital Borrowed Items.csv': 'borrowed',
+                'Digital Content Orders.csv': 'digital',
+                'Order History.csv': 'orders',
+            };
+
+            /* Find target CSVs by suffix match (zip may have variable prefix paths) */
+            for (const [path, entry] of Object.entries(zip.files)) {
+                if (entry.dir) continue;
+                for (const [filename, key] of Object.entries(targets)) {
+                    if (path.endsWith(filename)) {
+                        csvFiles[key] = await entry.async('string');
+                    }
+                }
+            }
+
+            const allBooks = [];
+
+            if (csvFiles.borrowed) {
+                const rows = Papa.parse(csvFiles.borrowed, { header: true, skipEmptyLines: true }).data;
+                allBooks.push(...extractBorrowedItems(rows));
+            }
+
+            if (csvFiles.digital) {
+                const rows = Papa.parse(csvFiles.digital, { header: true, skipEmptyLines: true }).data;
+                allBooks.push(...extractDigitalOrders(rows));
+            }
+
+            if (csvFiles.orders) {
+                const rows = Papa.parse(csvFiles.orders, { header: true, skipEmptyLines: true }).data;
+                allBooks.push(...extractOrderHistory(rows));
+            }
+
+            books = deduplicateBooks(allBooks);
+            books.sort((a, b) => a.title.localeCompare(b.title));
+
+            showFlash('success', `Found ${books.length} books from your Amazon export.`);
+            document.getElementById('upload-section').classList.add('hidden');
+            document.getElementById('results-section').classList.remove('hidden');
+            renderTable();
+        } catch (err) {
+            showFlash('error', `Error processing zip: ${err.message}`);
+        }
+    }
+
+    /* ==================== EXTRACTION FUNCTIONS ==================== */
+    function extractBorrowedItems(rows) {
+        return rows
+            .filter(r => r['Product Name'] && r['Product Name'] !== 'Not Applicable')
+            .map(r => ({
+                asin: r.ASIN || '',
+                title: (r['Product Name'] || '').trim(),
+                author: (r.Author || '').trim(),
+                status: 'Read',
+                source: 'borrowed',
+                checked: true,
+            }));
+    }
+
+    function extractDigitalOrders(rows) {
+        const results = [];
+        const priceRows = rows.filter(r => r['Component Type'] === 'Price Amount');
+
+        for (const r of priceRows) {
+            const seller = r['Seller Of Record'] || '';
+            const name = (r['Product Name'] || '').trim();
+            if (!name || name === 'Not Applicable') continue;
+
+            if (seller === 'Audible') {
+                results.push({
+                    asin: r.ASIN || '',
+                    title: name,
+                    author: '',
+                    status: 'Read',
+                    source: 'audible',
+                    checked: true,
+                });
+            } else if (BOOK_PUBLISHERS.has(seller) && seller !== 'Audible') {
+                results.push({
+                    asin: r.ASIN || '',
+                    title: name,
+                    author: '',
+                    status: 'Read',
+                    source: 'publisher',
+                    checked: true,
+                });
+            } else if (seller === 'Amazon Digital Services, Inc.' || seller === 'Amazon.com Services, Inc') {
+                const isNonBook = NON_BOOK_PATTERNS.some(p => p.test(name));
+                if (!isNonBook) {
+                    results.push({
+                        asin: r.ASIN || '',
+                        title: name,
+                        author: '',
+                        status: 'Read',
+                        source: 'amazon-digital',
+                        checked: false,
+                    });
+                }
+            }
+        }
+
+        return results;
+    }
+
+    function extractOrderHistory(rows) {
+        return rows
+            .filter(r => {
+                const asin = r.ASIN || '';
+                return /^\d{10}$/.test(asin) && r['Product Name'];
+            })
+            .map(r => ({
+                asin: r.ASIN || '',
+                title: (r['Product Name'] || '').trim(),
+                author: '',
+                status: 'Read',
+                source: 'physical',
+                checked: true,
+            }));
+    }
+
+    /* ==================== DEDUPLICATION ==================== */
+    function deduplicateBooks(allBooks) {
+        const seen = new Map();
+
+        for (const book of allBooks) {
+            if (!book.asin) {
+                /* No ASIN: keep as-is (rare edge case) */
+                seen.set(`_notitle_${seen.size}`, book);
+                continue;
+            }
+
+            if (seen.has(book.asin)) {
+                const existing = seen.get(book.asin);
+                /* Merge: fill in author if the new source has one and existing doesn't */
+                if (!existing.author && book.author) {
+                    existing.author = book.author;
+                }
+                /* Prefer checked=true if either source had it */
+                if (book.checked) {
+                    existing.checked = true;
+                }
+            } else {
+                seen.set(book.asin, { ...book });
+            }
+        }
+
+        return Array.from(seen.values());
+    }
+
+    /* ==================== FILTERING ==================== */
+    function getFilteredBooks() {
+        const search = document.getElementById('search-input').value.toLowerCase();
+        const sourceFilter = document.getElementById('source-filter').value;
+
+        return books.filter(book => {
+            if (sourceFilter !== 'all' && book.source !== sourceFilter) return false;
+            if (search) {
+                const haystack = (book.title + ' ' + book.author).toLowerCase();
+                if (!haystack.includes(search)) return false;
+            }
+            return true;
+        });
+    }
+
+    /* ==================== RENDERING ==================== */
+    function renderTable() {
+        const tbody = document.getElementById('book-tbody');
+        const emptyState = document.getElementById('empty-state');
+        const filtered = getFilteredBooks();
+
+        tbody.innerHTML = '';
+
+        if (filtered.length === 0) {
+            emptyState.classList.remove('hidden');
+        } else {
+            emptyState.classList.add('hidden');
+        }
+
+        for (const book of filtered) {
+            const tr = document.createElement('tr');
+            if (!book.checked) tr.classList.add('unchecked');
+
+            /* Checkbox */
+            const tdCheck = document.createElement('td');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = book.checked;
+            checkbox.addEventListener('change', () => {
+                book.checked = checkbox.checked;
+                tr.classList.toggle('unchecked', !book.checked);
+                updateStats();
+            });
+            tdCheck.appendChild(checkbox);
+            tr.appendChild(tdCheck);
+
+            /* Title */
+            const tdTitle = document.createElement('td');
+            const titleInput = document.createElement('input');
+            titleInput.type = 'text';
+            titleInput.value = book.title;
+            titleInput.addEventListener('input', () => { book.title = titleInput.value; });
+            tdTitle.appendChild(titleInput);
+            tr.appendChild(tdTitle);
+
+            /* Author */
+            const tdAuthor = document.createElement('td');
+            const authorInput = document.createElement('input');
+            authorInput.type = 'text';
+            authorInput.value = book.author;
+            authorInput.placeholder = 'Unknown';
+            authorInput.addEventListener('input', () => { book.author = authorInput.value; });
+            tdAuthor.appendChild(authorInput);
+            tr.appendChild(tdAuthor);
+
+            /* Status */
+            const tdStatus = document.createElement('td');
+            const statusSelect = document.createElement('select');
+            for (const s of STATUSES) {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                if (s === book.status) opt.selected = true;
+                statusSelect.appendChild(opt);
+            }
+            statusSelect.addEventListener('change', () => { book.status = statusSelect.value; });
+            tdStatus.appendChild(statusSelect);
+            tr.appendChild(tdStatus);
+
+            /* Source */
+            const tdSource = document.createElement('td');
+            const sourceSpan = document.createElement('span');
+            sourceSpan.className = `source-tag source-tag-${book.source}`;
+            sourceSpan.textContent = SOURCE_LABELS[book.source] || book.source;
+            tdSource.appendChild(sourceSpan);
+            tr.appendChild(tdSource);
+
+            tbody.appendChild(tr);
+        }
+
+        updateStats();
+        updateSelectAll();
+    }
+
+    function updateStats() {
+        const checkedCount = books.filter(b => b.checked).length;
+        const filtered = getFilteredBooks();
+        document.getElementById('stats-line').textContent =
+            `${checkedCount} of ${books.length} books selected for export` +
+            (filtered.length !== books.length ? ` (showing ${filtered.length})` : '');
+    }
+
+    function updateSelectAll() {
+        const filtered = getFilteredBooks();
+        const allChecked = filtered.length > 0 && filtered.every(b => b.checked);
+        document.getElementById('select-all').checked = allChecked;
+    }
+
+    /* ==================== AUTHOR LOOKUP ==================== */
+    async function lookUpAuthors() {
+        const booksToLookUp = books.filter(b => b.checked && !b.author);
+        if (booksToLookUp.length === 0) {
+            showFlash('success', 'All checked books already have authors.');
+            return;
+        }
+
+        const lookupBtn = document.getElementById('lookup-btn');
+        lookupBtn.disabled = true;
+
+        const progressContainer = document.getElementById('progress-container');
+        const progressLabel = document.getElementById('progress-label');
+        const progressFill = document.getElementById('progress-fill');
+        progressContainer.classList.add('visible');
+
+        let found = 0;
+        let failed = 0;
+
+        for (let i = 0; i < booksToLookUp.length; i++) {
+            const book = booksToLookUp[i];
+            const pct = Math.round(((i + 1) / booksToLookUp.length) * 100);
+            progressLabel.textContent = `Looking up ${i + 1} of ${booksToLookUp.length}: ${book.title.substring(0, 50)}...`;
+            progressFill.style.width = pct + '%';
+
+            try {
+                const query = encodeURIComponent(book.title);
+                const resp = await fetch(`https://openlibrary.org/search.json?q=${query}&limit=1`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.docs && data.docs.length > 0 && data.docs[0].author_name) {
+                        book.author = data.docs[0].author_name.join(', ');
+                        found++;
+                    }
+                }
+            } catch (e) {
+                failed++;
+            }
+
+            /* Small delay to be polite to the API */
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        progressContainer.classList.remove('visible');
+        lookupBtn.disabled = false;
+        renderTable();
+
+        const msg = `Author lookup complete. Found authors for ${found} of ${booksToLookUp.length} books.`;
+        showFlash('success', msg + (failed > 0 ? ` (${failed} failed requests)` : ''));
+    }
+
+    /* ==================== CSV EXPORT ==================== */
+    function exportCSV() {
+        const checkedBooks = books.filter(b => b.checked);
+        if (checkedBooks.length === 0) {
+            showFlash('error', 'No books selected for export.');
+            return;
+        }
+
+        const lines = ['Title,Author,Status'];
+        for (const book of checkedBooks) {
+            lines.push([book.title, book.author, book.status].map(csvQuote).join(','));
+        }
+
+        const csv = lines.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'booklist.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        showFlash('success', `Exported ${checkedBooks.length} books to booklist.csv`);
+    }
+
+    function csvQuote(value) {
+        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            return '"' + value.replace(/"/g, '""') + '"';
+        }
+        return value;
+    }
+
+    /* ==================== FLASH MESSAGES ==================== */
+    function showFlash(type, message) {
+        const area = document.getElementById('flash-area');
+        area.innerHTML = `<div class="flash flash-${type}">${message}</div>`;
+        setTimeout(() => { area.innerHTML = ''; }, 8000);
+    }
+
+    /* ==================== EVENT HANDLERS ==================== */
+    document.addEventListener('DOMContentLoaded', () => {
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                processZip(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                processZip(fileInput.files[0]);
+            }
+        });
+
+        document.getElementById('search-input').addEventListener('input', renderTable);
+        document.getElementById('source-filter').addEventListener('change', renderTable);
+
+        document.getElementById('select-all').addEventListener('change', (e) => {
+            const filtered = getFilteredBooks();
+            for (const book of filtered) {
+                book.checked = e.target.checked;
+            }
+            renderTable();
+        });
+
+        document.getElementById('lookup-btn').addEventListener('click', lookUpAuthors);
+        document.getElementById('export-btn').addEventListener('click', exportCSV);
+    });
+    </script>
+</body>
+</html>
