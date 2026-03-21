@@ -301,10 +301,11 @@
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
         }
         .col-check { width: 40px; }
-        .col-title { width: 35%; }
-        .col-author { width: 25%; }
-        .col-status { width: 140px; }
-        .col-source { width: 140px; }
+        .col-title { width: 28%; }
+        .col-author { width: 20%; }
+        .col-isbn { width: 100px; }
+        .col-status { width: 130px; }
+        .col-source { width: 130px; }
 
         /* ==================== SOURCE TAGS ==================== */
         .source-tag {
@@ -398,6 +399,8 @@
                                 <th class="col-check"><input type="checkbox" id="select-all" checked></th>
                                 <th class="col-title">Title</th>
                                 <th class="col-author">Author</th>
+                                <th class="col-isbn">ISBN 10</th>
+                                <th class="col-isbn">ISBN 13</th>
                                 <th class="col-status">Status</th>
                                 <th class="col-source">Source</th>
                             </tr>
@@ -527,7 +530,15 @@
             }
 
             books = deduplicateBooks(allBooks);
-            books.sort((a, b) => a.title.localeCompare(b.title));
+
+            /* Sort by source type first (Physical, Kindle, Audible, Amazon Digital), then by title */
+            const SOURCE_ORDER = { 'physical': 0, 'borrowed': 1, 'publisher': 2, 'audible': 3, 'amazon-digital': 4 };
+            books.sort((a, b) => {
+                const typeA = SOURCE_ORDER[a.source] ?? 99;
+                const typeB = SOURCE_ORDER[b.source] ?? 99;
+                if (typeA !== typeB) return typeA - typeB;
+                return a.title.localeCompare(b.title);
+            });
 
             currentPage = 0;
             visitedPages.clear();
@@ -549,6 +560,8 @@
                 asin: r.ASIN || '',
                 title: cleanTitle((r['Product Name'] || '').trim()),
                 author: (r.Author || '').trim(),
+                isbn10: '',
+                isbn13: '',
                 status: 'Read',
                 source: 'borrowed',
                 checked: true,
@@ -569,6 +582,8 @@
                     asin: r.ASIN || '',
                     title: cleanTitle(name),
                     author: '',
+                    isbn10: '',
+                    isbn13: '',
                     status: 'Read',
                     source: 'audible',
                     checked: true,
@@ -578,6 +593,8 @@
                     asin: r.ASIN || '',
                     title: cleanTitle(name),
                     author: '',
+                    isbn10: '',
+                    isbn13: '',
                     status: 'Read',
                     source: 'publisher',
                     checked: true,
@@ -589,6 +606,8 @@
                         asin: r.ASIN || '',
                         title: cleanTitle(name),
                         author: '',
+                        isbn10: '',
+                        isbn13: '',
                         status: 'Read',
                         source: 'amazon-digital',
                         checked: false,
@@ -610,6 +629,8 @@
                 asin: r.ASIN || '',
                 title: cleanTitle((r['Product Name'] || '').trim()),
                 author: '',
+                isbn10: r.ASIN || '',
+                isbn13: '',
                 status: 'Read',
                 source: 'physical',
                 checked: true,
@@ -634,9 +655,15 @@
             }
 
             if (existing) {
-                /* Merge: fill in author if the new source has one and existing doesn't */
+                /* Merge: fill in fields the new source has that existing doesn't */
                 if (!existing.author && book.author) {
                     existing.author = book.author;
+                }
+                if (!existing.isbn10 && book.isbn10) {
+                    existing.isbn10 = book.isbn10;
+                }
+                if (!existing.isbn13 && book.isbn13) {
+                    existing.isbn13 = book.isbn13;
                 }
                 /* Prefer checked=true if either source had it */
                 if (book.checked) {
@@ -726,6 +753,26 @@
             });
             tdAuthor.appendChild(authorInput);
             tr.appendChild(tdAuthor);
+
+            /* ISBN 10 */
+            const tdIsbn10 = document.createElement('td');
+            const isbn10Input = document.createElement('input');
+            isbn10Input.type = 'text';
+            isbn10Input.value = book.isbn10;
+            isbn10Input.placeholder = '';
+            isbn10Input.addEventListener('input', () => { book.isbn10 = isbn10Input.value; });
+            tdIsbn10.appendChild(isbn10Input);
+            tr.appendChild(tdIsbn10);
+
+            /* ISBN 13 */
+            const tdIsbn13 = document.createElement('td');
+            const isbn13Input = document.createElement('input');
+            isbn13Input.type = 'text';
+            isbn13Input.value = book.isbn13;
+            isbn13Input.placeholder = '';
+            isbn13Input.addEventListener('input', () => { book.isbn13 = isbn13Input.value; });
+            tdIsbn13.appendChild(isbn13Input);
+            tr.appendChild(tdIsbn13);
 
             /* Status */
             const tdStatus = document.createElement('td');
@@ -834,6 +881,20 @@
      *   batches of 50 with a stop/resume button, and use the lighter
      *   search.json?title= endpoint with fields= to minimize response size
      */
+    /* Extract ISBN-10 and ISBN-13 from an Open Library search doc's isbn array */
+    function extractIsbns(book, doc) {
+        if (!doc.isbn || !Array.isArray(doc.isbn)) return;
+        for (const isbn of doc.isbn) {
+            if (!book.isbn13 && isbn.length === 13 && /^\d{13}$/.test(isbn)) {
+                book.isbn13 = isbn;
+            }
+            if (!book.isbn10 && isbn.length === 10 && /^[\dX]{10}$/i.test(isbn)) {
+                book.isbn10 = isbn;
+            }
+            if (book.isbn10 && book.isbn13) break;
+        }
+    }
+
     const LOOKUP_BATCH_SIZE = 50;
     const LOOKUP_DELAY_MS = 1100; /* just over 1 second to respect rate limit */
     let lookupAborted = false;
@@ -883,14 +944,18 @@
 
                 /* Try exact title search first */
                 const resp = await fetch(
-                    `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name`
+                    `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name,isbn`
                 );
                 if (resp.ok) {
                     const data = await resp.json();
-                    if (data.docs && data.docs.length > 0 && data.docs[0].author_name) {
-                        book.author = data.docs[0].author_name.join(', ');
-                        found++;
-                        authorFound = true;
+                    if (data.docs && data.docs.length > 0) {
+                        const doc = data.docs[0];
+                        if (doc.author_name) {
+                            book.author = doc.author_name.join(', ');
+                            found++;
+                            authorFound = true;
+                        }
+                        extractIsbns(book, doc);
                     }
                 } else if (resp.status === 429) {
                     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -901,13 +966,17 @@
                 if (!authorFound && !lookupAborted) {
                     await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
                     const resp2 = await fetch(
-                        `https://openlibrary.org/search.json?q=${query}&limit=1&fields=author_name`
+                        `https://openlibrary.org/search.json?q=${query}&limit=1&fields=author_name,isbn`
                     );
                     if (resp2.ok) {
                         const data2 = await resp2.json();
-                        if (data2.docs && data2.docs.length > 0 && data2.docs[0].author_name) {
-                            book.author = data2.docs[0].author_name.join(', ');
-                            found++;
+                        if (data2.docs && data2.docs.length > 0) {
+                            const doc2 = data2.docs[0];
+                            if (doc2.author_name) {
+                                book.author = doc2.author_name.join(', ');
+                                found++;
+                            }
+                            extractIsbns(book, doc2);
                         }
                     } else if (resp2.status === 429) {
                         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -951,9 +1020,9 @@
             return;
         }
 
-        const lines = ['Title,Author,Status'];
+        const lines = ['Title,Author,ISBN 10,ISBN 13,Status'];
         for (const book of checkedBooks) {
-            lines.push([book.title, book.author, book.status].map(csvQuote).join(','));
+            lines.push([book.title, book.author, book.isbn10, book.isbn13, book.status].map(csvQuote).join(','));
         }
 
         const csv = lines.join('\n');
@@ -964,6 +1033,12 @@
         a.download = 'booklist.csv';
         a.click();
         URL.revokeObjectURL(url);
+
+        /* Uncheck exported books so they aren't included in future exports */
+        for (const book of checkedBooks) {
+            book.checked = false;
+        }
+        renderTable();
 
         showFlash('success', `Exported ${checkedBooks.length} books to booklist.csv`);
     }
