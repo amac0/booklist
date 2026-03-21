@@ -421,8 +421,9 @@
                 <div id="bottom-stats" class="stats-line"></div>
                 <div class="bottom-actions">
                     <button id="lookup-btn" class="btn btn-secondary">Look Up Authors</button>
+                    <button id="prev-page-btn" class="btn btn-secondary hidden">Previous Page</button>
                     <button id="next-page-btn" class="btn btn-secondary">Next Page</button>
-                    <button id="export-btn" class="btn btn-primary" disabled>Export CSV</button>
+                    <button id="export-btn" class="btn btn-primary hidden" disabled>Export CSV</button>
                 </div>
             </div>
         </div>
@@ -742,17 +743,31 @@
         }
         document.getElementById('bottom-stats').textContent = bottomText;
 
-        /* Enable/disable export button based on whether all selected books have authors */
+        /* Check if all selected books on the current page have authors */
+        const pageBooks = getPageBooks();
+        const pageCheckedMissingAuthor = pageBooks.filter(b => b.checked && !b.author.trim()).length;
+        const isLastPage = currentPage >= totalPages - 1;
+
+        /* Previous page: visible only if not on first page */
+        const prevBtn = document.getElementById('prev-page-btn');
+        prevBtn.classList.toggle('hidden', currentPage === 0);
+
+        /* Next page: visible only if not on last page, disabled if current page has selected books missing authors */
+        const nextBtn = document.getElementById('next-page-btn');
+        nextBtn.classList.toggle('hidden', isLastPage);
+        nextBtn.disabled = pageCheckedMissingAuthor > 0;
+        nextBtn.title = pageCheckedMissingAuthor > 0
+            ? 'All selected books on this page must have authors before continuing'
+            : 'Go to next page';
+
+        /* Export CSV: visible only on last page, disabled if any selected book across all pages is missing authors */
         const exportBtn = document.getElementById('export-btn');
+        exportBtn.classList.toggle('hidden', !isLastPage);
         const allHaveAuthors = checkedCount > 0 && checkedMissingAuthor === 0;
         exportBtn.disabled = !allHaveAuthors;
         exportBtn.title = allHaveAuthors
             ? `Export ${checkedCount} books to CSV`
             : 'All selected books must have authors before exporting';
-
-        /* Enable/disable next page button */
-        const nextBtn = document.getElementById('next-page-btn');
-        nextBtn.disabled = currentPage >= totalPages - 1;
     }
 
     function updateSelectAll() {
@@ -764,6 +779,14 @@
     function nextPage() {
         if (currentPage < getTotalPages() - 1) {
             currentPage++;
+            renderTable();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+
+    function prevPage() {
+        if (currentPage > 0) {
+            currentPage--;
             renderTable();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -963,6 +986,7 @@
         });
 
         document.getElementById('lookup-btn').onclick = lookUpAuthors;
+        document.getElementById('prev-page-btn').addEventListener('click', prevPage);
         document.getElementById('next-page-btn').addEventListener('click', nextPage);
         document.getElementById('export-btn').addEventListener('click', exportCSV);
     });
