@@ -815,12 +815,16 @@
 
             const book = batch[i];
             const pct = Math.round(((i + 1) / batch.length) * 100);
-            const eta = Math.round((batch.length - i - 1) * LOOKUP_DELAY_MS / 1000);
+            /* ETA assumes ~1.5 requests per book on average (some need fallback) */
+            const eta = Math.round((batch.length - i - 1) * LOOKUP_DELAY_MS * 1.5 / 1000);
             progressLabel.textContent = `Looking up ${i + 1} of ${batch.length}: "${book.title.substring(0, 40)}..." (~${eta}s remaining)`;
             progressFill.style.width = pct + '%';
 
             try {
                 const query = encodeURIComponent(book.title);
+                let authorFound = false;
+
+                /* Try exact title search first */
                 const resp = await fetch(
                     `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name`
                 );
@@ -829,11 +833,29 @@
                     if (data.docs && data.docs.length > 0 && data.docs[0].author_name) {
                         book.author = data.docs[0].author_name.join(', ');
                         found++;
+                        authorFound = true;
                     }
                 } else if (resp.status === 429) {
-                    /* Rate limited — back off and retry once */
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     failed++;
+                }
+
+                /* Fall back to broader general search if title search found nothing */
+                if (!authorFound && !lookupAborted) {
+                    await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
+                    const resp2 = await fetch(
+                        `https://openlibrary.org/search.json?q=${query}&limit=1&fields=author_name`
+                    );
+                    if (resp2.ok) {
+                        const data2 = await resp2.json();
+                        if (data2.docs && data2.docs.length > 0 && data2.docs[0].author_name) {
+                            book.author = data2.docs[0].author_name.join(', ');
+                            found++;
+                        }
+                    } else if (resp2.status === 429) {
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        failed++;
+                    }
                 }
             } catch (e) {
                 failed++;
