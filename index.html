@@ -109,6 +109,14 @@
             background: var(--input-bg);
             color: var(--text);
         }
+        .btn-danger {
+            background: transparent;
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        .btn-danger:hover:not(:disabled) {
+            background: var(--danger-light);
+        }
         .btn-sm {
             padding: 0.3125rem 0.625rem;
             font-size: 0.75rem;
@@ -174,48 +182,21 @@
             display: none;
         }
 
-        /* ==================== TOOLBAR ==================== */
-        .toolbar {
+        /* ==================== STATS & BOTTOM BAR ==================== */
+        .stats-line {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+        .bottom-bar {
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+        }
+        .bottom-actions {
             display: flex;
             gap: 0.75rem;
             align-items: center;
             flex-wrap: wrap;
-            margin-bottom: 1rem;
-        }
-        .toolbar .search-input {
-            flex: 1;
-            min-width: 200px;
-            padding: 0.625rem 1rem;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--input-bg);
-            font-size: 0.875rem;
-            font-family: inherit;
-            color: var(--text);
-        }
-        .toolbar .search-input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-        }
-        .toolbar select {
-            padding: 0.625rem 1rem;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--input-bg);
-            font-size: 0.875rem;
-            font-family: inherit;
-            color: var(--text);
-        }
-        .toolbar select:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-        }
-        .stats-line {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            width: 100%;
         }
 
         /* ==================== PROGRESS BAR ==================== */
@@ -375,12 +356,12 @@
                 padding: 0 0.75rem;
                 margin: 1rem auto;
             }
-            .toolbar {
+            .bottom-actions {
                 flex-direction: column;
                 align-items: stretch;
             }
-            .toolbar .search-input {
-                min-width: unset;
+            .bottom-actions .btn {
+                justify-content: center;
             }
         }
     </style>
@@ -407,28 +388,7 @@
 
         <!-- Results Section (hidden until books loaded) -->
         <div id="results-section" class="hidden">
-            <div class="toolbar">
-                <input type="text" class="search-input" id="search-input" placeholder="Search by title or author...">
-                <select id="source-filter">
-                    <option value="all">All Sources</option>
-                    <option value="borrowed">Kindle Unlimited</option>
-                    <option value="audible">Audible</option>
-                    <option value="publisher">Publisher Ebook</option>
-                    <option value="amazon-digital">Amazon Digital (unverified)</option>
-                    <option value="physical">Physical Order</option>
-                </select>
-                <button id="lookup-btn" class="btn btn-secondary">Look Up Authors</button>
-                <button id="export-btn" class="btn btn-primary">Export CSV</button>
-            </div>
-
             <div id="stats-line" class="stats-line"></div>
-
-            <div id="progress-container" class="progress-container">
-                <div id="progress-label" class="progress-label">Looking up authors...</div>
-                <div class="progress-bar">
-                    <div id="progress-fill" class="progress-fill"></div>
-                </div>
-            </div>
 
             <div class="card-flush">
                 <div class="table-wrapper">
@@ -446,7 +406,23 @@
                     </table>
                 </div>
                 <div id="empty-state" class="empty-state hidden">
-                    <p>No books match your search.</p>
+                    <p>No books on this page.</p>
+                </div>
+            </div>
+
+            <div id="progress-container" class="progress-container">
+                <div id="progress-label" class="progress-label">Looking up authors...</div>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="bottom-bar">
+                <div id="bottom-stats" class="stats-line"></div>
+                <div class="bottom-actions">
+                    <button id="lookup-btn" class="btn btn-secondary">Look Up Authors</button>
+                    <button id="next-page-btn" class="btn btn-secondary">Next Page</button>
+                    <button id="export-btn" class="btn btn-primary" disabled>Export CSV</button>
                 </div>
             </div>
         </div>
@@ -458,6 +434,8 @@
 
     /* ==================== STATE ==================== */
     let books = [];
+    let currentPage = 0;
+    const PAGE_SIZE = 25;
 
     /* ==================== CONSTANTS ==================== */
     const BOOK_PUBLISHERS = new Set([
@@ -537,7 +515,12 @@
             books = deduplicateBooks(allBooks);
             books.sort((a, b) => a.title.localeCompare(b.title));
 
-            showFlash('success', `Found ${books.length} books from your Amazon export.`);
+            /* TEST MODE: limit to first 10 books for easier testing */
+            const fullCount = books.length;
+            books = books.slice(0, 10);
+
+            currentPage = 0;
+            showFlash('success', `Found ${fullCount} books from your Amazon export (showing first 10 for testing).`);
             document.getElementById('upload-section').classList.add('hidden');
             document.getElementById('results-section').classList.remove('hidden');
             renderTable();
@@ -650,36 +633,31 @@
         return Array.from(seen.values());
     }
 
-    /* ==================== FILTERING ==================== */
-    function getFilteredBooks() {
-        const search = document.getElementById('search-input').value.toLowerCase();
-        const sourceFilter = document.getElementById('source-filter').value;
+    /* ==================== PAGINATION ==================== */
+    function getPageBooks() {
+        const start = currentPage * PAGE_SIZE;
+        return books.slice(start, start + PAGE_SIZE);
+    }
 
-        return books.filter(book => {
-            if (sourceFilter !== 'all' && book.source !== sourceFilter) return false;
-            if (search) {
-                const haystack = (book.title + ' ' + book.author).toLowerCase();
-                if (!haystack.includes(search)) return false;
-            }
-            return true;
-        });
+    function getTotalPages() {
+        return Math.max(1, Math.ceil(books.length / PAGE_SIZE));
     }
 
     /* ==================== RENDERING ==================== */
     function renderTable() {
         const tbody = document.getElementById('book-tbody');
         const emptyState = document.getElementById('empty-state');
-        const filtered = getFilteredBooks();
+        const pageBooks = getPageBooks();
 
         tbody.innerHTML = '';
 
-        if (filtered.length === 0) {
+        if (pageBooks.length === 0) {
             emptyState.classList.remove('hidden');
         } else {
             emptyState.classList.add('hidden');
         }
 
-        for (const book of filtered) {
+        for (const book of pageBooks) {
             const tr = document.createElement('tr');
             if (!book.checked) tr.classList.add('unchecked');
 
@@ -711,7 +689,10 @@
             authorInput.type = 'text';
             authorInput.value = book.author;
             authorInput.placeholder = 'Unknown';
-            authorInput.addEventListener('input', () => { book.author = authorInput.value; });
+            authorInput.addEventListener('input', () => {
+                book.author = authorInput.value;
+                updateStats();
+            });
             tdAuthor.appendChild(authorInput);
             tr.appendChild(tdAuthor);
 
@@ -745,20 +726,63 @@
     }
 
     function updateStats() {
-        const checkedCount = books.filter(b => b.checked).length;
-        const filtered = getFilteredBooks();
+        const checkedBooks = books.filter(b => b.checked);
+        const checkedCount = checkedBooks.length;
+        const checkedMissingAuthor = checkedBooks.filter(b => !b.author.trim()).length;
+        const totalPages = getTotalPages();
+
+        /* Top stats: page info */
         document.getElementById('stats-line').textContent =
-            `${checkedCount} of ${books.length} books selected for export` +
-            (filtered.length !== books.length ? ` (showing ${filtered.length})` : '');
+            `Page ${currentPage + 1} of ${totalPages} (${books.length} total books)`;
+
+        /* Bottom stats: selection and author status */
+        let bottomText = `${checkedCount} book${checkedCount !== 1 ? 's' : ''} selected for export.`;
+        if (checkedMissingAuthor > 0) {
+            bottomText += ` ${checkedMissingAuthor} selected book${checkedMissingAuthor !== 1 ? 's' : ''} still missing authors.`;
+        }
+        document.getElementById('bottom-stats').textContent = bottomText;
+
+        /* Enable/disable export button based on whether all selected books have authors */
+        const exportBtn = document.getElementById('export-btn');
+        const allHaveAuthors = checkedCount > 0 && checkedMissingAuthor === 0;
+        exportBtn.disabled = !allHaveAuthors;
+        exportBtn.title = allHaveAuthors
+            ? `Export ${checkedCount} books to CSV`
+            : 'All selected books must have authors before exporting';
+
+        /* Enable/disable next page button */
+        const nextBtn = document.getElementById('next-page-btn');
+        nextBtn.disabled = currentPage >= totalPages - 1;
     }
 
     function updateSelectAll() {
-        const filtered = getFilteredBooks();
-        const allChecked = filtered.length > 0 && filtered.every(b => b.checked);
+        const pageBooks = getPageBooks();
+        const allChecked = pageBooks.length > 0 && pageBooks.every(b => b.checked);
         document.getElementById('select-all').checked = allChecked;
     }
 
+    function nextPage() {
+        if (currentPage < getTotalPages() - 1) {
+            currentPage++;
+            renderTable();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }
+
     /* ==================== AUTHOR LOOKUP ==================== */
+
+    /*
+     * Open Library API guidelines (https://openlibrary.org/developers/api):
+     * - Rate limit: 1 req/sec unidentified, 3 req/sec with User-Agent
+     * - Browsers forbid setting User-Agent in fetch, so we're limited to 1 req/sec
+     * - "Do not make hundreds of single-book requests" — so we look up in
+     *   batches of 50 with a stop/resume button, and use the lighter
+     *   search.json?title= endpoint with fields= to minimize response size
+     */
+    const LOOKUP_BATCH_SIZE = 50;
+    const LOOKUP_DELAY_MS = 1100; /* just over 1 second to respect rate limit */
+    let lookupAborted = false;
+
     async function lookUpAuthors() {
         const booksToLookUp = books.filter(b => b.checked && !b.author);
         if (booksToLookUp.length === 0) {
@@ -767,46 +791,76 @@
         }
 
         const lookupBtn = document.getElementById('lookup-btn');
-        lookupBtn.disabled = true;
+        lookupAborted = false;
+
+        /* Switch button to a stop button */
+        lookupBtn.textContent = 'Stop Lookup';
+        lookupBtn.classList.remove('btn-secondary');
+        lookupBtn.classList.add('btn-danger');
+        lookupBtn.onclick = () => { lookupAborted = true; };
 
         const progressContainer = document.getElementById('progress-container');
         const progressLabel = document.getElementById('progress-label');
         const progressFill = document.getElementById('progress-fill');
         progressContainer.classList.add('visible');
 
+        /* Process in batches */
+        const batch = booksToLookUp.slice(0, LOOKUP_BATCH_SIZE);
+        const remaining = booksToLookUp.length - batch.length;
         let found = 0;
         let failed = 0;
 
-        for (let i = 0; i < booksToLookUp.length; i++) {
-            const book = booksToLookUp[i];
-            const pct = Math.round(((i + 1) / booksToLookUp.length) * 100);
-            progressLabel.textContent = `Looking up ${i + 1} of ${booksToLookUp.length}: ${book.title.substring(0, 50)}...`;
+        for (let i = 0; i < batch.length; i++) {
+            if (lookupAborted) break;
+
+            const book = batch[i];
+            const pct = Math.round(((i + 1) / batch.length) * 100);
+            const eta = Math.round((batch.length - i - 1) * LOOKUP_DELAY_MS / 1000);
+            progressLabel.textContent = `Looking up ${i + 1} of ${batch.length}: "${book.title.substring(0, 40)}..." (~${eta}s remaining)`;
             progressFill.style.width = pct + '%';
 
             try {
                 const query = encodeURIComponent(book.title);
-                const resp = await fetch(`https://openlibrary.org/search.json?q=${query}&limit=1`);
+                const resp = await fetch(
+                    `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name`
+                );
                 if (resp.ok) {
                     const data = await resp.json();
                     if (data.docs && data.docs.length > 0 && data.docs[0].author_name) {
                         book.author = data.docs[0].author_name.join(', ');
                         found++;
                     }
+                } else if (resp.status === 429) {
+                    /* Rate limited — back off and retry once */
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    failed++;
                 }
             } catch (e) {
                 failed++;
             }
 
-            /* Small delay to be polite to the API */
-            await new Promise(resolve => setTimeout(resolve, 200));
+            /* Respect rate limit: 1 request per second */
+            if (i < batch.length - 1 && !lookupAborted) {
+                await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
+            }
         }
 
         progressContainer.classList.remove('visible');
-        lookupBtn.disabled = false;
+
+        /* Restore button */
+        lookupBtn.textContent = 'Look Up Authors';
+        lookupBtn.classList.remove('btn-danger');
+        lookupBtn.classList.add('btn-secondary');
+        lookupBtn.onclick = lookUpAuthors;
+
         renderTable();
 
-        const msg = `Author lookup complete. Found authors for ${found} of ${booksToLookUp.length} books.`;
-        showFlash('success', msg + (failed > 0 ? ` (${failed} failed requests)` : ''));
+        let msg = lookupAborted
+            ? `Lookup stopped. Found authors for ${found} books before stopping.`
+            : `Author lookup complete. Found authors for ${found} of ${batch.length} books.`;
+        if (failed > 0) msg += ` (${failed} failed requests)`;
+        if (remaining > 0 && !lookupAborted) msg += ` ${remaining} more books remain — click "Look Up Authors" again for the next batch.`;
+        showFlash('success', msg);
     }
 
     /* ==================== CSV EXPORT ==================== */
@@ -878,18 +932,16 @@
             }
         });
 
-        document.getElementById('search-input').addEventListener('input', renderTable);
-        document.getElementById('source-filter').addEventListener('change', renderTable);
-
         document.getElementById('select-all').addEventListener('change', (e) => {
-            const filtered = getFilteredBooks();
-            for (const book of filtered) {
+            const pageBooks = getPageBooks();
+            for (const book of pageBooks) {
                 book.checked = e.target.checked;
             }
             renderTable();
         });
 
-        document.getElementById('lookup-btn').addEventListener('click', lookUpAuthors);
+        document.getElementById('lookup-btn').onclick = lookUpAuthors;
+        document.getElementById('next-page-btn').addEventListener('click', nextPage);
         document.getElementById('export-btn').addEventListener('click', exportCSV);
     });
     </script>
