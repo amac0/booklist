@@ -516,12 +516,8 @@
             books = deduplicateBooks(allBooks);
             books.sort((a, b) => a.title.localeCompare(b.title));
 
-            /* TEST MODE: limit to first 10 books for easier testing */
-            const fullCount = books.length;
-            books = books.slice(0, 10);
-
             currentPage = 0;
-            showFlash('success', `Found ${fullCount} books from your Amazon export (showing first 10 for testing).`);
+            showFlash('success', `Found ${books.length} books from your Amazon export.`);
             document.getElementById('upload-section').classList.add('hidden');
             document.getElementById('results-section').classList.remove('hidden');
             renderTable();
