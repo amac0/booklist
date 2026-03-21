@@ -939,32 +939,65 @@
             progressFill.style.width = pct + '%';
 
             try {
-                const query = encodeURIComponent(book.title);
                 let authorFound = false;
+                const hasIsbn = book.isbn10 || book.isbn13;
 
-                /* Try exact title search first */
-                const resp = await fetch(
-                    `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name,isbn`
-                );
-                if (resp.ok) {
-                    const data = await resp.json();
-                    if (data.docs && data.docs.length > 0) {
-                        const doc = data.docs[0];
-                        if (doc.author_name) {
-                            book.author = doc.author_name.join(', ');
-                            found++;
-                            authorFound = true;
+                if (hasIsbn) {
+                    /* Look up by ISBN — more precise, returns title and author */
+                    const isbn = book.isbn13 || book.isbn10;
+                    const resp = await fetch(
+                        `https://openlibrary.org/search.json?isbn=${isbn}&limit=1&fields=title,author_name,isbn`
+                    );
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.docs && data.docs.length > 0) {
+                            const doc = data.docs[0];
+                            if (doc.title) {
+                                book.title = doc.title;
+                            }
+                            if (doc.author_name) {
+                                book.author = doc.author_name.join(', ');
+                                found++;
+                                authorFound = true;
+                            }
+                            extractIsbns(book, doc);
                         }
-                        extractIsbns(book, doc);
+                    } else if (resp.status === 429) {
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        failed++;
                     }
-                } else if (resp.status === 429) {
-                    await new Promise(resolve => setTimeout(resolve, 5000));
-                    failed++;
+                }
+
+                /* If no ISBN or ISBN lookup didn't find an author, try title search */
+                if (!authorFound && !lookupAborted) {
+                    if (hasIsbn) {
+                        await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
+                    }
+                    const query = encodeURIComponent(book.title);
+                    const resp = await fetch(
+                        `https://openlibrary.org/search.json?title=${query}&limit=1&fields=author_name,isbn`
+                    );
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.docs && data.docs.length > 0) {
+                            const doc = data.docs[0];
+                            if (doc.author_name) {
+                                book.author = doc.author_name.join(', ');
+                                found++;
+                                authorFound = true;
+                            }
+                            extractIsbns(book, doc);
+                        }
+                    } else if (resp.status === 429) {
+                        await new Promise(resolve => setTimeout(resolve, 5000));
+                        failed++;
+                    }
                 }
 
                 /* Fall back to broader general search if title search found nothing */
                 if (!authorFound && !lookupAborted) {
                     await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
+                    const query = encodeURIComponent(book.title);
                     const resp2 = await fetch(
                         `https://openlibrary.org/search.json?q=${query}&limit=1&fields=author_name,isbn`
                     );
