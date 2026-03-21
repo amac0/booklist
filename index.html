@@ -615,17 +615,22 @@
 
     /* ==================== DEDUPLICATION ==================== */
     function deduplicateBooks(allBooks) {
-        const seen = new Map();
+        const seenByAsin = new Map();
+        const seenByTitle = new Map();
 
         for (const book of allBooks) {
-            if (!book.asin) {
-                /* No ASIN: keep as-is (rare edge case) */
-                seen.set(`_notitle_${seen.size}`, book);
-                continue;
+            /* Deduplicate by ASIN first, then by title */
+            const asinKey = book.asin || null;
+            const titleKey = book.title.toLowerCase();
+
+            let existing = null;
+            if (asinKey && seenByAsin.has(asinKey)) {
+                existing = seenByAsin.get(asinKey);
+            } else if (seenByTitle.has(titleKey)) {
+                existing = seenByTitle.get(titleKey);
             }
 
-            if (seen.has(book.asin)) {
-                const existing = seen.get(book.asin);
+            if (existing) {
                 /* Merge: fill in author if the new source has one and existing doesn't */
                 if (!existing.author && book.author) {
                     existing.author = book.author;
@@ -635,11 +640,14 @@
                     existing.checked = true;
                 }
             } else {
-                seen.set(book.asin, { ...book });
+                const entry = { ...book, authorEditedByUser: false };
+                if (asinKey) seenByAsin.set(asinKey, entry);
+                seenByTitle.set(titleKey, entry);
             }
         }
 
-        return Array.from(seen.values());
+        /* Return unique entries (seenByTitle has all of them) */
+        return Array.from(seenByTitle.values());
     }
 
     /* ==================== PAGINATION ==================== */
@@ -700,6 +708,7 @@
             authorInput.placeholder = 'Unknown';
             authorInput.addEventListener('input', () => {
                 book.author = authorInput.value;
+                book.authorEditedByUser = true;
                 updateStats();
             });
             tdAuthor.appendChild(authorInput);
@@ -815,9 +824,11 @@
     let lookupAborted = false;
 
     async function lookUpAuthors() {
-        const booksToLookUp = books.filter(b => b.checked && !b.author);
+        /* Only look up selected books on the current page that are missing authors and weren't user-edited */
+        const pageBooks = getPageBooks();
+        const booksToLookUp = pageBooks.filter(b => b.checked && !b.author.trim() && !b.authorEditedByUser);
         if (booksToLookUp.length === 0) {
-            showFlash('success', 'All checked books already have authors.');
+            showFlash('success', 'All selected books on this page already have authors.');
             return;
         }
 
@@ -835,20 +846,20 @@
         const progressFill = document.getElementById('progress-fill');
         progressContainer.classList.add('visible');
 
-        /* Process in batches */
-        const batch = booksToLookUp.slice(0, LOOKUP_BATCH_SIZE);
-        const remaining = booksToLookUp.length - batch.length;
         let found = 0;
         let failed = 0;
 
-        for (let i = 0; i < batch.length; i++) {
+        for (let i = 0; i < booksToLookUp.length; i++) {
             if (lookupAborted) break;
 
-            const book = batch[i];
-            const pct = Math.round(((i + 1) / batch.length) * 100);
-            /* ETA assumes ~1.5 requests per book on average (some need fallback) */
-            const eta = Math.round((batch.length - i - 1) * LOOKUP_DELAY_MS * 1.5 / 1000);
-            progressLabel.textContent = `Looking up ${i + 1} of ${batch.length}: "${book.title.substring(0, 40)}..." (~${eta}s remaining)`;
+            const book = booksToLookUp[i];
+
+            /* Skip if user edited the author while lookup was running */
+            if (book.authorEditedByUser || book.author.trim()) continue;
+
+            const pct = Math.round(((i + 1) / booksToLookUp.length) * 100);
+            const eta = Math.round((booksToLookUp.length - i - 1) * LOOKUP_DELAY_MS * 1.5 / 1000);
+            progressLabel.textContent = `Looking up ${i + 1} of ${booksToLookUp.length}: "${book.title.substring(0, 40)}..." (~${eta}s remaining)`;
             progressFill.style.width = pct + '%';
 
             try {
@@ -892,8 +903,11 @@
                 failed++;
             }
 
+            /* Live-update the table after each lookup */
+            renderTable();
+
             /* Respect rate limit: 1 request per second */
-            if (i < batch.length - 1 && !lookupAborted) {
+            if (i < booksToLookUp.length - 1 && !lookupAborted) {
                 await new Promise(resolve => setTimeout(resolve, LOOKUP_DELAY_MS));
             }
         }
@@ -908,12 +922,10 @@
 
         renderTable();
 
-        let msg = lookupAborted
+        const msg = lookupAborted
             ? `Lookup stopped. Found authors for ${found} books before stopping.`
-            : `Author lookup complete. Found authors for ${found} of ${batch.length} books.`;
-        if (failed > 0) msg += ` (${failed} failed requests)`;
-        if (remaining > 0 && !lookupAborted) msg += ` ${remaining} more books remain — click "Look Up Authors" again for the next batch.`;
-        showFlash('success', msg);
+            : `Author lookup complete. Found authors for ${found} of ${booksToLookUp.length} books.`;
+        showFlash('success', msg + (failed > 0 ? ` (${failed} failed requests)` : ''));
     }
 
     /* ==================== CSV EXPORT ==================== */
