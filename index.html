@@ -346,6 +346,49 @@
             font-size: 0.875rem;
         }
 
+        /* ==================== HELP PANEL ==================== */
+        .help-panel {
+            margin-bottom: 1.5rem;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+        .help-panel summary {
+            padding: 0.75rem 1.25rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: var(--primary);
+            cursor: pointer;
+            list-style: none;
+        }
+        .help-panel summary::-webkit-details-marker { display: none; }
+        .help-panel summary::before {
+            content: '\25B6';
+            display: inline-block;
+            margin-right: 0.5rem;
+            font-size: 0.625rem;
+            transition: transform 0.15s;
+        }
+        .help-panel[open] summary::before {
+            transform: rotate(90deg);
+        }
+        .help-content {
+            padding: 0 1.25rem 1rem;
+            font-size: 0.8125rem;
+            color: var(--text-muted);
+            line-height: 1.7;
+        }
+        .help-content ol {
+            padding-left: 1.25rem;
+        }
+        .help-content li {
+            margin-bottom: 0.375rem;
+        }
+        .help-content strong {
+            color: var(--text);
+        }
+
         /* ==================== HIDDEN ==================== */
         .hidden {
             display: none !important;
@@ -375,6 +418,19 @@
     <main class="page">
         <h1 class="page-title">Amazon Book Extractor</h1>
         <p class="page-subtitle">Upload your Amazon Personal Export zip to extract your book list</p>
+
+        <details class="help-panel">
+            <summary>How to use this tool</summary>
+            <div class="help-content">
+                <ol>
+                    <li><strong>Get your data:</strong> Request your Amazon data export at amazon.com/gp/privacycentral, then download the zip when ready.</li>
+                    <li><strong>Upload:</strong> Drop the zip file below or click to select it. Books are extracted from your Kindle, Audible, and physical order history.</li>
+                    <li><strong>Review:</strong> Books are shown 25 per page. Uncheck any items that aren't books. Edit titles, authors, or ISBNs as needed.</li>
+                    <li><strong>Look up authors:</strong> Click "Look Up Authors" to fetch missing authors and ISBNs from Open Library. Books with ISBNs get the most accurate results.</li>
+                    <li><strong>Export:</strong> Once all selected books have authors, click "Export CSV" to download. Exported books are unchecked automatically so you can continue with the next pages.</li>
+                </ol>
+            </div>
+        </details>
 
         <div id="flash-area"></div>
 
