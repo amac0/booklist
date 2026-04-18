@@ -5,19 +5,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BookList - Amazon Export Book Extractor</title>
+    <title>Attention Feed: Booklist</title>
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-BGDPXJFXEV"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-BGDPXJFXEV');
+    </script>
+    <link rel="stylesheet" href="https://attentionfeed.com/shared/shared.css" />
+    <script src="https://attentionfeed.com/shared/shared.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
-        /* ==================== DESIGN SYSTEM (peplist-derived) ==================== */
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+        /* ==================== APP-SPECIFIC VARIABLES ==================== */
         :root {
             --bg: #f8f9fb;
-            --card-bg: #ffffff;
             --text: #1a1a2e;
-            --text-muted: #6b7280;
             --primary: #6366f1;
+            --card-bg: #ffffff;
+            --text-muted: #6b7280;
             --primary-hover: #4f46e5;
             --primary-light: #eef2ff;
             --border: #e5e7eb;
@@ -27,33 +35,6 @@
             --danger: #ef4444;
             --danger-light: #fef2f2;
             --success: #22c55e;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            line-height: 1.6;
-            min-height: 100vh;
-        }
-
-        /* ==================== NAV ==================== */
-        nav.site-nav {
-            background: var(--card-bg);
-            border-bottom: 1px solid var(--border);
-            padding: 0.75rem 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-        }
-        nav.site-nav .logo {
-            font-weight: 700;
-            font-size: 1.125rem;
-            color: var(--primary);
-            text-decoration: none;
         }
 
         /* ==================== LAYOUT ==================== */
@@ -411,9 +392,9 @@
     </style>
 </head>
 <body>
-    <nav class="site-nav">
-        <span class="logo">BookList</span>
-    </nav>
+    <af-header project-name="Booklist"
+               project-url="https://booklist.attentionfeed.com">
+    </af-header>
 
     <main class="page">
         <h1 class="page-title">Amazon Book Extractor</h1>
@@ -1191,5 +1172,6 @@
         document.getElementById('export-btn').addEventListener('click', exportCSV);
     });
     </script>
+    <af-footer colophon-url="https://booklist.attentionfeed.com/colophon"></af-footer>
 </body>
 </html>
